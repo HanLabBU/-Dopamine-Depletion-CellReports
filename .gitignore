@@ -1,0 +1,17 @@
+*.h5
+*.hdf5
+*.mat
+*.pptx
+*.tif
+*.png
+*.svg
+figs/
+ppts/
+*.p
+acc2ca/
+rot2ca/
+speed2ca/
+CaLFP_Corr
+PPT_drafts.ipynb
+.ipynb_checkpoints/PPT_drafts-checkpoint.ipynb
+
