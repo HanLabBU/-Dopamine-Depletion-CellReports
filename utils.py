@@ -779,8 +779,18 @@ def getAlignedSpeed(cellType,cre = None, mice = None, period = None, day=None,sa
         
     return dResult[:,:ind],df
 
+def getDrugFromSess(sess):
 
-def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None):
+    if sess[-1] == 'A':
+        return 'Amph'
+    elif sess[-1] == 'L':
+        return 'L-Dopa'
+    elif sess[-1] == 'S':
+        return 'Saline'
+    else:
+        return'None'
+
+def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None, drug=None,drugPeriod='Pre'):
     # function that take in the classification and return the appropreate data:
     #Inputs:
     #   cellType - return MSN or CRE if both pass ['MNS','CRE']
@@ -798,7 +808,11 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None):
     
     dFile = 'FinalData_6OHDA_H.h5'
     # double check parameters inputs are valid:
-    savePath = '/home/dana_z/HD1/lfpAligned2Ca/'
+    if drugPeriod=='Post':
+        savePath = '/home/dana_z/HD1/lfpAligned2Ca/Post/'
+    else:
+        savePath = '/home/dana_z/HD1/lfpAligned2Ca/'
+
     df = pd.read_csv(savePath+'sessions')
     
     if period == None and day != None and isinstance(day,type(lambda c:None)):
@@ -810,6 +824,10 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None):
        
     if cre in ['PV','CHI','NA']:
         df = df[(df.cre==cre)]
+    
+    if drug in ['Amph','L-Dopa','Saline','None']:
+        df = df[(df.drug==drug)]
+    
 
     if not isinstance(cellType,list):
         cellType = [cellType]
@@ -860,3 +878,45 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None):
     return dResult[:,:,:ind],df
 
 
+def getRotPeriods(ax,rot,dt,th,lth,dataPoints,Color = {'hiAC':'mediumseagreen','hiC':'limegreen','lo':'tomato'},plt=True):
+    Sdata = {}
+    #find movment onset:
+    lrot =  smooth(rot, dataPoints/2)
+    hiAC_rot = lrot >= th
+    hiC_rot = lrot <= -th
+    lo_rot = (lrot <= lth) & (lrot >= -lth)
+#    hiRot = hiRot.T
+    dhiC = np.diff(1* hiC_rot)
+    dhiAC = np.diff(1* hiAC_rot)
+    dlo = np.diff(1* lo_rot)
+    segments = {'hiAC':{'start':[],'end':[]},'hiC':{'start':[],'end':[]},'lo':{'start':[],'end':[]}}
+    for cond in segments.keys():
+        hiRot = eval(cond+'_rot')
+        d = eval('d'+cond)
+        
+        if hiRot[0] ==1:
+            tStart = 0
+        else:
+            tStart = None
+
+        for l in range(0,len(d)):
+            if d[l] == 1:
+                tStart = l
+            if d[l] == -1 and l-tStart > dataPoints:
+                segments[cond]['start'].append(tStart)
+                segments[cond]['end'].append(l)
+                tStart = None
+
+        if tStart is not None and np.sum(hiRot[tStart:]) > dataPoints:
+            segments[cond]['start'].append(tStart)
+            segments[cond]['end'].append(len(hiRot)-1)
+        Sdata[cond] = segments[cond]
+        # plot rot vd. onset:
+        t = np.linspace(0,len(rot)*dt,len(rot))
+        ax.plot(t,rot,color='black')
+
+    #   Fix that to draw all thress periods in diff colors
+        if plt:
+            for l in range(0, len(segments[cond]['start'])):
+                ax.axvspan(t[segments[cond]['start'][l]], t[segments[cond]['end'][l]], color= Color[cond], alpha=0.5)
+    return Sdata

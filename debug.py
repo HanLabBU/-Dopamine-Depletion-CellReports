@@ -71,7 +71,7 @@ for m in tqdm(miceList):
 
     Tseconds = 1
 
-    data = getData(Files[1],['trace'],period ='Post', mice=m,drug=b'Amphetamin')
+    data = getData(Files[1],['trace'],period ='Post', mice=m,drug=b'Saline')
     days = np.zeros(len(data))
     ind = 0
     # sort by session for my own OCD
@@ -127,9 +127,9 @@ for m in tqdm(miceList):
                         ax.plot(t[T*tLim:endT],df[d,:]+d*spacing,color=Color[d]) 
                         ax.plot(t[T*tLim:endT],ca[d,:]+d*spacing,color='red')
                         ax.plot(t[T*tLim:endT],cf[d,:]+d*spacing,color='gold')
-                    fig.savefig('/home/dana_z/HD1/6OHAD_figures/post_amph_prewin20_detrend/'+sess+'_'+str(N)+'_'+str(T)+'.png',transparent=False,format='png')
+                    fig.savefig('/home/dana_z/HD1/6OHAD_figures/Post_Saline/'+sess+'_'+str(N)+'_'+str(T)+'.png',transparent=False,format='png')
                     ax.cla()
-#                plt.close(fig)
+#                    plt.close(fig)
         except:
             print(sess,' error')
             continue
