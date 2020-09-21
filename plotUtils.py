@@ -77,3 +77,6 @@ def plt2pptx(slide,fig,left=Inches(0.93),top=Inches(1),width=None,height=None):
     gc.collect()
     
     return pic
+
+def circShiftRoll(shifts,data):
+    return  np.array([np.roll(row, x) for row,x in zip(data, shifts)])

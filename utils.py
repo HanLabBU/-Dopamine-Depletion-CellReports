@@ -811,7 +811,7 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None, dru
     if drugPeriod=='Post':
         savePath = '/home/dana_z/HD1/lfpAligned2Ca/Post/'
     else:
-        savePath = '/home/dana_z/HD1/lfpAligned2Ca/'
+        savePath = '/home/dana_z/HD1/lfpAligned2Ca/Pre/'
 
     df = pd.read_csv(savePath+'sessions')
     
@@ -862,6 +862,7 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None, dru
         if 'MSN' in cellType:
             tempD = pickle.load(open(savePath+'MSN/'+sess,'rb'))
             tempD[tempD==9999] = np.nan
+            tempD[tempD==-9999] = np.nan
             dResult[:,:,ind:ind+tempD.shape[2]] = tempD   
             ind = ind+tempD.shape[2]
         # for every Cre neuron:
@@ -870,8 +871,8 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None, dru
                 tempD = pickle.load(open(savePath+'CRE/'+sess,'rb'))
             except:
                 continue
-#            tempD[tempD==9999] = np.nan
-#            tempD[tempD==-9999] = np.nan
+            tempD[tempD==9999] = np.nan
+            tempD[tempD==-9999] = np.nan
             dResult[:,:,ind:ind+tempD.shape[2]] = tempD   
             ind = ind+tempD.shape[2]
         
@@ -882,8 +883,8 @@ def getRotPeriods(ax,rot,dt,th,lth,dataPoints,Color = {'hiAC':'mediumseagreen','
     Sdata = {}
     #find movment onset:
     lrot =  smooth(rot, dataPoints/2)
-    hiAC_rot = lrot >= th
-    hiC_rot = lrot <= -th
+    hiC_rot = lrot >= th
+    hiAC_rot = lrot <= -th
     lo_rot = (lrot <= lth) & (lrot >= -lth)
 #    hiRot = hiRot.T
     dhiC = np.diff(1* hiC_rot)
@@ -920,3 +921,154 @@ def getRotPeriods(ax,rot,dt,th,lth,dataPoints,Color = {'hiAC':'mediumseagreen','
             for l in range(0, len(segments[cond]['start'])):
                 ax.axvspan(t[segments[cond]['start'][l]], t[segments[cond]['end'][l]], color= Color[cond], alpha=0.5)
     return Sdata
+
+def periodCalc(day):
+    if day== 0:
+        return 'Healthy'
+    elif day<5:
+        return 'Day 1-4'
+    elif day<13:
+        return 'Day 5-12'
+    elif day<21:
+        return 'Day 13-20'
+    else:
+        return 'One Month'
+    
+
+def calcLFPAlign2Mvmt(savePath,mvmt='speed',onsetName='mvmtOnset',norAxis=1):
+    # function used to calculte LFP aligned to mvmt onset, or rotation onset 6/15/2020
+    Files = ['FinalData_6OHDA.h5','FinalData_6OHDA_H.h5','FinalData_6OHDA_H_skip.h5','FinalData_6OHDA_skip.h5']
+    miceList = getMiceList(Files[0]) 
+    f = h5py.File('Spectograms.hdf5','r') #LFP coeffs
+    
+    # constents for analysis:
+    WinPre = 2 #s
+    WinPost = 2 #s
+    df = pd.DataFrame(columns=['mouse','sess','day','period','cre'])
+    
+    for m in miceList:
+        data =  getData(Files[0],[mvmt,'lfp'],period ='Pre', mice=m)
+        cre = getCreType(Files[1],m)
+        for sess in tqdm(data.keys()): 
+            if sess[5] == 'B':
+                day = 0
+            else:
+                day = int(re.findall(r'\d+',sess[5:])[0])
+    
+             # get data
+            speedOnset = getOnsetOrPeriod(m,sess,'Pre',onsetName)
+            if np.sum(speedOnset)==0:
+                print('no onset in sess: ',sess)
+                continue
+    #        rotOnset = getOnsetOrPeriod(m,sess,'Pre','rotOnset')
+            
+            coeff = np.abs(f[m][sess]['Pre']['coeff'].value)
+            lfpOutliers = removeLFPOutliers(data[sess]['lfp']['lfp'], sess)
+            try:
+                coeff[:,(lfpOutliers[:,0]==1)] = np.nan
+                if norAxis == 1:
+                    coeff = coeff.T/np.nansum(coeff,axis=norAxis) # So that axis[0] is the time axis + normalize power in frequency per sesion
+                else: 
+                    coeff = coeff/np.nansum(coeff,axis=norAxis)
+                    coeff = coeff.T
+            except:
+                print(sess)
+                continue
+            
+            # add session to df, so can be retrived
+    
+            dtS = float(1/data[sess][mvmt]['Fs'])
+            dtL = float(1/data[sess]['lfp']['FS'])
+            ts = np.arange(0, np.max(speedOnset.shape)) * dtS 
+            tl = np.arange(0, np.max(data[sess]['lfp']['lfp'].shape)) * dtL
+    
+            tPlot = np.linspace(-WinPre,WinPost,int((WinPre+WinPost)/dtL))      
+            
+            # convert onset to LFP time: 
+            onsets = np.full_like(tl,False)
+            for si in ts[speedOnset]:
+                ti = np.argmin(np.abs(tl-si))
+                onsets[ti] = True
+            onsets = onsets.astype(bool)
+            # for every Cre neuron:
+            al = alignToOnset(coeff,onsets, winPost =WinPost/dtL, winPre =WinPre/dtL)
+    
+            if al.ndim <3:
+                try:
+                    al = np.reshape(al,(al.shape[0],al.shape[1],1))
+                except:
+                    print('no onset, when there should be in sess= ',sess)
+                    continue
+           
+            if 'aligned' in locals():
+                aligned = np.concatenate((aligned,al), axis = 2)
+            else:
+                aligned = al
+                
+            aligned = np.nan_to_num(aligned,nan=9999.0)
+            pickle.dump( aligned, open( savePath+sess, "wb" ), protocol=4 )
+            df= df.append({'mouse':m,'sess':sess,'day':day,'period': periodCalc(day),'cre':cre},ignore_index=True)
+            del aligned
+    df.to_csv(savePath+'sessions')
+
+def getAlignedLFP_mvmt(savePath,cre = None, mice = None, period = None, day=None, drug=None,drugPeriod='Pre'):
+    # function that take in the classification and return the appropreate data:
+    #Inputs:
+    #   cellType - return MSN or CRE if both pass ['MNS','CRE']
+    #   mice - (Optional) list of mice from to include. Default: None - will load data for all mice
+    #   period - (Optional) either 'Pre' or 'Post'. difault: None - return full length of data from picked sessions
+    #   day - (Optional) lambda function with logic for picking days. Default: None - ignore day attr when picking data
+    #           NOTE: day will be ignored if period is specified
+    #   cre - (Optional) which cre mouse is it. options:None (default), "PV", "CHI"
+    #                   must have trace included in dataType list to be taken into account
+    #   WinPre - (Optional) length of pre window in secounds (default 2)
+    #   WinPost - (Optional) length of post window in secounds (default 2)
+    #Output:
+    #   data - the requested data. format: {mice_session:{dataType:data}}
+    
+    
+    dFile = 'FinalData_6OHDA_H.h5'
+    # double check parameters inputs are valid:
+
+    df = pd.read_csv(savePath+'sessions')
+    
+    if period == None and day != None and isinstance(day,type(lambda c:None)):
+        df['keep'] = df.apply(lambda row: day(row.day), axis=1)
+        df = df[(df.keep==True)]
+    
+    if period in ['Healthy','Day 1-4','Day 5-12','Day 13-20','One Month']:
+        df = df[(df.period==period)]
+       
+    if cre in ['PV','CHI','NA']:
+        df = df[(df.cre==cre)]
+    
+    if drug in ['Amph','L-Dopa','Saline','None']:
+        df = df[(df.drug==drug)]
+     
+   
+    # traverse the hdf5 file:
+    if mice == None:
+        mice = getMiceList(dFile) 
+    elif not isinstance(mice,list):
+        mice = [mice]
+    
+    if not isinstance(mice[0],str):
+        for m in range(0,len(mice)):
+            mice[m] = str(mice[m])
+    df = df[(df.mouse.isin(mice))]
+    # start extracting the data:   
+    
+    # alllocate memory:
+   
+    dResult = np.empty([12206,87,len(df)*50],dtype=float)
+    
+    ind = 0
+    for sess in df.sess.unique():
+            tempD = pickle.load(open(savePath+sess,'rb'))
+            tempD[tempD==9999.0] = np.nan
+            tempD[tempD==-9999.0] = np.nan
+#            print(ind, dResult[:,:,ind:ind+tempD.shape[2]].shape,tempD.shape,ind+tempD.shape[2],len(df))
+            dResult[:,:,ind:ind+tempD.shape[2]] = tempD   
+            ind = ind+tempD.shape[2]
+        
+    return dResult[:,:,:ind],df
