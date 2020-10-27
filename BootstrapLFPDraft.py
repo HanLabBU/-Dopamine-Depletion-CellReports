@@ -48,6 +48,7 @@ Files = ['FinalData_6OHDA.h5','FinalData_6OHDA_H.h5','FinalData_6OHDA_H_skip.h5'
 
 # align spectogram to spike onset -> for each mouse and in total,seperate by CRE:
 miceList = getMiceList(Files[0]) 
+miceList = [m for m in miceList if m not in ['8430','4539','7584','7909','1222'] ]
 
 # constents for analysis:
 WinPre = 2 #s
@@ -98,8 +99,8 @@ for m in miceList:
 #get the substructed data in a format that we can actually work with:
 norData = {}
 distData = {}
-x,y = data['Healthy']['1208'].shape
-t200 = (tPlot >0) & (tPlot<0.200)
+x,y = data['Healthy'][miceList[0]].shape
+t200 = (tPlot >0.5) & (tPlot<2)
 gamma = freq >= 31    
 for per in data.keys():
     if per == 'Healthy':
@@ -137,7 +138,7 @@ for per in data.keys():
     ax.set_xticklabels(np.round(freq[gamma],2) , rotation=45, ha='right')
     ax.axhline(0,color='red')
     ax.set_title(per + ' - Bootstrap confident intervals')
-    fig.savefig(figPath+per+'_BootstrapIntervals.png',format='png')
+    fig.savefig(figPath+per+'_BootstrapIntervals_2_0s_NoBetaMice.png',format='png')
     fig.clf()
     plt.close(fig)
     
@@ -146,26 +147,26 @@ for per in data.keys():
 
 
 distData2 = {}
-x,y = data['Healthy']['1208'].shape
-t200 = (tPlot >0) & (tPlot<0.200)
-fr = {'high_Gamma':freq >= 60, 'low_Gamma':(freq >= 40) & (freq<60), 'high_Beta_15-30':(freq >= 15) & (freq<30),
+x,y = data['Healthy'][miceList[0]].shape
+t200 = (tPlot >0.5) & (tPlot<2)
+fr = {'high_Gamma':freq >= 60, 'low_Gamma':(freq >= 40) & (freq<60), 'high_Beta_15-20':(freq >= 15) & (freq<20),
      'Beta_10-15':(freq >= 10) & (freq<15)}
 lFr = len(fr.keys())
      
 for per in data.keys():
     if per == 'Healthy':
         continue
-#    inds = np.random.randint(nMice-1,size = (nMice,numIter))
-#    distData2[per] = np.empty((lFr,numIter))
-#    for itr in range(0,numIter):
-#        for ind,k in enumerate(fr.keys()):
-#            highGamma = fr[k]
-#            temp  = norData[per][:,:,inds[:,itr]]
-#            temp = np.nanmean(temp[t200,:,:][:,highGamma,:],axis=0)
-#            temp = np.nanmean(temp,axis=0)
-#            distData2[per][ind,itr] = np.nanmean(temp,axis=0)
-#        if itr%100 == 0:
-#            print('finishd ',itr, ' iterations ... ')
+    inds = np.random.randint(nMice-1,size = (nMice,numIter))
+    distData2[per] = np.empty((lFr,numIter))
+    for itr in range(0,numIter):
+        for ind,k in enumerate(fr.keys()):
+            highGamma = fr[k]
+            temp  = norData[per][:,:,inds[:,itr]]
+            temp = np.nanmean(temp[t200,:,:][:,highGamma,:],axis=0)
+            temp = np.nanmean(temp,axis=0)
+            distData2[per][ind,itr] = np.nanmean(temp,axis=0)
+        if itr%100 == 0:
+            print('finishd ',itr, ' iterations ... ')
     
     fig, ax = plt.subplots(1,1,figsize=(20,20))
     ax.boxplot(distData2[per].T,whis= [2.5,97.5],flierprops={'markersize':1, 'alpha':0.5},
@@ -175,6 +176,6 @@ for per in data.keys():
     ax.tick_params(axis='y', which='major', labelsize=20)
     ax.axhline(0,color='red')
     ax.set_title(per + ' - Bootstrap confident intervals',fontsize=20)
-    fig.savefig(figPath+per+'_BootstrapIntervals_selectedFreq.png',format='png')
+    fig.savefig(figPath+per+'_BootstrapIntervals_selectedFreq_2_0s_NoBetaMice.png',format='png')
     fig.clf()
     plt.close(fig)
