@@ -12,6 +12,7 @@ from numpy.lib.stride_tricks import as_strided
 import pandas as pd
 import pickle
 from IO import *
+from numpy import matlib
 
 
 def getPowerInBand(f,Sxx,minf, maxf):
@@ -809,9 +810,9 @@ def getAlignedLFP(cellType,cre = None, mice = None, period = None, day=None, dru
     dFile = 'FinalData_6OHDA_H.h5'
     # double check parameters inputs are valid:
     if drugPeriod=='Post':
-        savePath = '/home/dana_z/HD1/lfpAligned2Ca/Post/'
+        savePath = '/home/dana_z/HD1/lfp2ca_notNormalize/'#'/home/dana_z/HD1/lfpAligned2Ca/Post/'
     else:
-        savePath = '/home/dana_z/HD1/lfpAligned2Ca/Pre/'
+        savePath = '/home/dana_z/HD1/lfp2ca_notNormalize/'#'/home/dana_z/HD1/lfpAligned2Ca/Pre/'
 
     df = pd.read_csv(savePath+'sessions')
     
@@ -1036,7 +1037,7 @@ def getAlignedLFP_mvmt(savePath,cre = None, mice = None, period = None, day=None
         df['keep'] = df.apply(lambda row: day(row.day), axis=1)
         df = df[(df.keep==True)]
     
-    if period in ['Healthy','Day 1-4','Day 5-12','Day 13-20','One Month']:
+    if period in df.period.unique():
         df = df[(df.period==period)]
        
     if cre in ['PV','CHI','NA']:
@@ -1070,5 +1071,178 @@ def getAlignedLFP_mvmt(savePath,cre = None, mice = None, period = None, day=None
 #            print(ind, dResult[:,:,ind:ind+tempD.shape[2]].shape,tempD.shape,ind+tempD.shape[2],len(df))
             dResult[:,:,ind:ind+tempD.shape[2]] = tempD   
             ind = ind+tempD.shape[2]
+        
+    return dResult[:,:,:ind],df
+
+def circShiftRoll(shifts,data):
+    return  np.array([np.roll(row, x) for row,x in zip(data, shifts)])
+
+def perNeuronPerEvent(aDff,dff,onset,niter,PostS=40,preS=40):
+    if np.min(dff.shape) ==1:
+        aDff = np.reshape(aDff,(aDff.shape[0],1,aDff.shape[1]))
+    if np.sum(onset) ==1:
+        aDff = np.reshape(aDff,(aDff.shape[0],aDff.shape[1],1))
+        
+    nT,nN,nE = aDff.shape
+    # if no event in session -> move on...
+    if nE == 0:
+        return None,None,None
+    if onset.ndim ==1:
+        onset = np.reshape(onset,(1,onset.shape[0]))
+    
+        
+    Th = np.empty((nN,niter*nE))
+#    print(nE, Th.shape,dff.shape,np.sum(onset))
+#    print(nE, nN,nT)
+    # calculate thersholds:
+    for itr in range(0,niter):
+        shifts = np.random.randint(size=1,low=0,high=onset.shape[1])
+        Ons = circShiftRoll(shifts,onset)
+        sdff = alignToOnset(dff.T, Ons, winPost=PostS,winPre=preS)
+#         if sdff.size ==0 or sdff.ndim <2:
+#             shifts = np.random.randint(size=1,low=0,high=onset.shape[1])
+#             Ons = circShiftRoll(shifts,onset)
+#             sdff = alignToOnset(dff.T, Ons, winPost=PostS,winPre=preS)            
+#         if nN ==1:
+#             sdff = np.reshape(sdff,(sdff.shape[0],1,sdff.shape[1]))
+#         if nE ==1: 
+#             sdff = np.reshape(sdff,(sdff.shape[0],sdff.shape[1],1))
+
+            
+        # when 1 or movement events -> could end up with no event 2 secounds in -> empty sdff
+        while isinstance(sdff,int) or sdff.ndim <3:
+            shifts = np.random.randint(size=1,low=0,high=onset.shape[1])
+            Ons = circShiftRoll(shifts,onset)
+            sdff = alignToOnset(dff.T, Ons, winPost=PostS,winPre=preS)
+            try:
+                if sdff.size ==0:
+                    sdff = 0    
+                    continue
+                if nN ==1:
+                    sdff = np.reshape(sdff,(sdff.shape[0],1,sdff.shape[1]))
+                if nE ==1: 
+                    sdff = np.reshape(sdff,(sdff.shape[0],sdff.shape[1],1))
+            except: 
+                sdff = 1;
+
+
+
+        # if sdff contain negative value, shift entire session up
+        mins = np.min(sdff,axis=0)
+        sdff[:,mins<0] =sdff[:,mins<0]+np.abs(mins[mins<0])
+        # calculate the means
+#        print(sdff.shape)
+        muPre = np.mean(sdff[:int(nT/2),:,:],axis=0)
+        muPost = np.mean(sdff[int(nT/2):,:,:],axis=0)
+        ra = muPost/muPre
+        while ra.shape[1]<nE: # incase lose event cause too close to begining of time axis
+             ra = np.concatenate((ra,np.mean(ra,axis=1,keepdims=True)),axis=1)    
+        if ra.shape[1]>nE:
+            ra = ra[:,:nE]
+        Th[:,itr*nE:(itr+1)*nE] = ra
+
+    Th = np.percentile(Th,95,axis=1)
+
+    Th = (matlib.repmat(Th,nE,1).T)
+
+    mins = np.min(aDff,axis=0)
+    aDff[:,mins<0] =aDff[:,mins<0]+np.abs(mins[mins<0])
+
+    prePoints = aDff[:int(nT/2),:,:]
+    postPoints = aDff[int(nT/2):,:,:]
+
+    muPre = np.mean(prePoints,axis=0)
+    muPost = np.mean(postPoints,axis=0)
+    results = muPost/muPre    
+#    print(nE,nN,Th.shape,results.shape)
+    return (results>Th),results,Th[:,0]
+
+def getAlignedLFP2(cellType,cre = None, mice = None, period = None, day=None, drug=None,drugPeriod='Pre'):
+    # function that take in the classification and return the appropreate data:
+    #Inputs:
+    #   cellType - return MSN or CRE if both pass ['MNS','CRE']
+    #   mice - (Optional) list of mice from to include. Default: None - will load data for all mice
+    #   period - (Optional) either 'Pre' or 'Post'. difault: None - return full length of data from picked sessions
+    #   day - (Optional) lambda function with logic for picking days. Default: None - ignore day attr when picking data
+    #           NOTE: day will be ignored if period is specified
+    #   cre - (Optional) which cre mouse is it. options:None (default), "PV", "CHI"
+    #                   must have trace included in dataType list to be taken into account
+    #   WinPre - (Optional) length of pre window in secounds (default 2)
+    #   WinPost - (Optional) length of post window in secounds (default 2)
+    #Output:
+    #   data - the requested data. format: {mice_session:{dataType:data}}
+    
+    
+    dFile = 'FinalData_6OHDA_H.h5'
+    # double check parameters inputs are valid:
+    if drugPeriod=='Post':
+        savePath = '/home/dana_z/HD1/lfp2ca_notNormalize/'#'/home/dana_z/HD1/lfpAligned2Ca/Post/'
+    else:
+        savePath = '/home/dana_z/HD1/lfp2ca_notNormalize/'#'/home/dana_z/HD1/lfpAligned2Ca/Pre/'
+
+    df = pd.read_csv(savePath+'sessions')
+    
+    if period == None and day != None and isinstance(day,type(lambda c:None)):
+        df['keep'] = df.apply(lambda row: day(row.day), axis=1)
+        df = df[(df.keep==True)]
+    
+    if period in ['Healthy','Day 1-4','Day 5-12','Day 13-20','One Month']:
+        df = df[(df.period==period)]
+       
+    if cre in ['PV','CHI','NA']:
+        df = df[(df.cre==cre)]
+    
+    if drug in ['Amph','L-Dopa','Saline','None']:
+        df = df[(df.drug==drug)]
+    
+
+    if not isinstance(cellType,list):
+        cellType = [cellType]
+        
+    cellType = list(set(cellType).intersection(set(['MSN','CRE'])))
+    if len(cellType) == 0:
+        raise ValueError('Not a valid cellType value. cellType must be in ["MSN","CRE"]')
+    
+    # traverse the hdf5 file:
+    if mice == None:
+        mice = getMiceList(dFile) 
+    elif not isinstance(mice,list):
+        mice = [mice]
+    
+    if not isinstance(mice[0],str):
+        for m in range(0,len(mice)):
+            mice[m] = str(mice[m])
+    df = df[(df.mouse.isin(mice))]
+    # start extracting the data:   
+    
+    # alllocate memory:
+#    nNeurons = 0;
+#    if 'MSN' in cellType:
+#        nNeurons = nNeurons + int(df.numMsn.sum()) - int(df.numred.sum())
+#    if 'CRE' in cellType:
+#        nNeurons = nNeurons + int(df.numred.sum())
+    nSess = len(df.sess.unique())
+    dResult = np.empty([12206,87,nSess],dtype=float)
+    
+    ind = 0
+    for sess in df.sess.unique():
+        if 'MSN' in cellType:
+            tempD = pickle.load(open(savePath+'MSN/'+sess,'rb'))
+            tempD[tempD==9999] = np.nan
+            tempD[tempD==-9999] = np.nan
+            tempD = np.nanmean(tempD,axis=2)
+            dResult[:,:,ind] = tempD   
+            ind = ind+1
+        # for every Cre neuron:
+        if 'CRE' in cellType:
+            try:
+                tempD = pickle.load(open(savePath+'CRE/'+sess,'rb'))
+            except:
+                continue
+            tempD[tempD==9999] = np.nan
+            tempD[tempD==-9999] = np.nan
+            tempD = np.nanmean(tempD,axis=2)
+            dResult[:,:,ind] = tempD   
+            ind = ind+1
         
     return dResult[:,:,:ind],df
