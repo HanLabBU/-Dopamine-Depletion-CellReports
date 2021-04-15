@@ -8,7 +8,7 @@ Created on Tue Nov  5 17:50:59 2019
 translation of the chronux package to python because I'm too far in at this point ): 
 """
 import os
-os.chdir('/home/dana_z/ssd_2TB/6OHDA')
+os.chdir('D:\\6OHDA\\')
 #import mpld3
 #mpld3.enable_notebook()
 import numpy as np

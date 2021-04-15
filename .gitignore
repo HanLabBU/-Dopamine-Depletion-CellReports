@@ -6,9 +6,11 @@
 *.png
 *.svg
 *.csv
+*.xlsx
 figs/
 ppts/
 *.p
+*.pyc
 acc2ca/
 rot2ca/
 speed2ca/

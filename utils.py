@@ -923,7 +923,7 @@ def getRotPeriods(ax,rot,dt,th,lth,dataPoints,Color = {'hiAC':'mediumseagreen','
                 ax.axvspan(t[segments[cond]['start'][l]], t[segments[cond]['end'][l]], color= Color[cond], alpha=0.5)
     return Sdata
 
-def periodCalc(day):
+def periodCalcOld(day):
     if day== 0:
         return 'Healthy'
     elif day<5:
@@ -934,7 +934,14 @@ def periodCalc(day):
         return 'Day 13-20'
     else:
         return 'One Month'
-    
+
+def periodCalc(day):
+    if day== 0:
+        return 'Healthy'
+    elif day<13:
+        return 'Day 1-13'
+    else:
+        return 'Day 14-35'
 
 def calcLFPAlign2Mvmt(savePath,mvmt='speed',onsetName='mvmtOnset',norAxis=1):
     # function used to calculte LFP aligned to mvmt onset, or rotation onset 6/15/2020
