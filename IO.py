@@ -575,4 +575,12 @@ def removeLFPOutliers(lfp, suffix):
     if np.sum(outlier)>0:
         print('found ',np.sum(outlier),' outlier points')
     return outlier
+
+def getPositions(fileName,m,s):
+    with h5py.File(fileName,'r') as hf:
+        if m+'/'+s+'/traces/ROI' in hf:
+            return hf[m][s]['traces']['ROI'][:].astype(int)
+        else:
+            return -1
+
                 

@@ -13,8 +13,10 @@ ppts/
 *.pyc
 acc2ca/
 rot2ca/
+graphs/
 speed2ca/
 CaLFP_Corr
 PPT_drafts.ipynb
-.ipynb_checkpoints/PPT_drafts-checkpoint.ipynb
+.ipynb_checkpoints
+
 
