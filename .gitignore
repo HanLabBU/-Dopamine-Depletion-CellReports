@@ -18,5 +18,6 @@ speed2ca/
 CaLFP_Corr
 PPT_drafts.ipynb
 .ipynb_checkpoints
-
+tunning/
+hyperband/
 
