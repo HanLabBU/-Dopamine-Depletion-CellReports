@@ -1253,3 +1253,191 @@ def getAlignedLFP2(cellType,cre = None, mice = None, period = None, day=None, dr
             ind = ind+1
         
     return dResult[:,:,:ind],df
+
+def getAlignedLFP3(cellType,cre = None, mice = None, period = None, day=None, drug=None,drugPeriod='Pre'):
+    # function that take in the classification and return the appropreate data:
+    #Inputs:
+    #   cellType - return MSN or CRE if both pass ['MNS','CRE']
+    #   mice - (Optional) list of mice from to include. Default: None - will load data for all mice
+    #   period - (Optional) either 'Pre' or 'Post'. difault: None - return full length of data from picked sessions
+    #   day - (Optional) lambda function with logic for picking days. Default: None - ignore day attr when picking data
+    #           NOTE: day will be ignored if period is specified
+    #   cre - (Optional) which cre mouse is it. options:None (default), "PV", "CHI"
+    #                   must have trace included in dataType list to be taken into account
+    #   WinPre - (Optional) length of pre window in secounds (default 2)
+    #   WinPost - (Optional) length of post window in secounds (default 2)
+    #Output:
+    #   data - the requested data. format: {mice_session:{dataType:data}}
+    
+    
+    dFile = 'FinalData_6OHDA_H.h5'
+    # double check parameters inputs are valid:
+    if drugPeriod=='Post':
+        savePath = 'J:\\lfp2ca_notNormalize\\Post\\'#'/home/dana_z/HD1/lfpAligned2Ca/Post/'
+    else:
+        savePath = 'J:\\lfp2ca_notNormalize\\'#'/home/dana_z/HD1/lfpAligned2Ca/Pre/'
+
+    df = pd.read_csv(savePath+'sessions')
+    
+    if period == None and day != None and isinstance(day,type(lambda c:None)):
+        df['keep'] = df.apply(lambda row: day(row.day), axis=1)
+        df = df[(df.keep==True)]
+    
+    if period in ['Healthy','Acute','Chronic']:
+        df = df[(df.period==period)]
+       
+    if cre in ['PV','CHI','NA']:
+        df = df[(df.cre==cre)]
+    
+    if drug in ['Amph','L-Dopa','Saline','None']:
+        df = df[(df.drug==drug)]
+    
+
+    if not isinstance(cellType,list):
+        cellType = [cellType]
+        
+    cellType = list(set(cellType).intersection(set(['MSN','CRE'])))
+    if len(cellType) == 0:
+        raise ValueError('Not a valid cellType value. cellType must be in ["MSN","CRE"]')
+    
+    # traverse the hdf5 file:
+    if mice == None:
+        mice = getMiceList(dFile) 
+    elif not isinstance(mice,list):
+        mice = [mice]
+    
+    if not isinstance(mice[0],str):
+        for m in range(0,len(mice)):
+            mice[m] = str(mice[m])
+    df = df[(df.mouse.isin(mice))]
+    # start extracting the data:   
+    
+    # alllocate memory:
+#    nNeurons = 0;
+#    if 'MSN' in cellType:
+#        nNeurons = nNeurons + int(df.numMsn.sum()) - int(df.numred.sum())
+#    if 'CRE' in cellType:
+#        nNeurons = nNeurons + int(df.numred.sum())
+    nSess = len(df.mouse.unique())
+    dResult = np.empty([12206,87,nSess],dtype=float)
+    
+    ind = 0
+    for m in df.mouse.unique():
+        dfM = df[df.mouse == m]
+        indM = 0
+        nSessM = len(df.sess.unique())
+        nNeurons = 0
+        if 'MSN' in cellType:
+            nNeurons = nNeurons + int(dfM.numMsn.sum()) - int(dfM.numred.sum())
+        if 'CRE' in cellType:
+            nNeurons = nNeurons + int(dfM.numred.sum())
+        MResult = np.empty([12206,87,nNeurons],dtype=float)
+        for sess in dfM.sess.unique():
+            if 'MSN' in cellType:
+                try: 
+                    tempD = pickle.load(open(savePath+'MSN\\'+sess,'rb'))
+                except:
+                    continue
+                tempD[tempD==9999] = np.nan
+                tempD[tempD==-9999] = np.nan
+                mu = np.mean(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+                Std = np.std(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+                tempD =(tempD-mu)/Std
+#                 print(indM,indM+tempD.shape[2],tempD.shape[2],MResult[:,:,indM:(indM+tempD.shape[2])].shape)
+                MResult[:,:,indM:(indM+tempD.shape[2])] = tempD 
+                indM = indM+tempD.shape[2]
+            # for every Cre neuron:
+            if 'CRE' in cellType:
+                try:
+                    tempD = pickle.load(open(savePath+'CRE\\'+sess,'rb'))
+                except:
+                    continue
+                tempD[tempD==9999] = np.nan
+                tempD[tempD==-9999] = np.nan
+                mu = np.mean(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+                Std = np.std(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+                tempD =(tempD-mu)/Std
+#                 print(indM,indM+tempD.shape[2],tempD.shape[2],MResult[:,:,indM:(indM+tempD.shape[2])].shape)
+                MResult[:,:,indM:(indM+tempD.shape[2])] = tempD 
+                indM = indM+tempD.shape[2]
+        MResult = MResult[:,:,:indM]
+        dResult[:,:,ind] = np.nanmean(MResult,axis=2)  
+        ind = ind+1
+        
+    return dResult[:,:,:ind],df
+
+def getAlignedLFP_mvmt2(savePath,cre = None, mice = None, period = None, day=None, drug=None,drugPeriod='Pre'):
+    # function that take in the classification and return the appropreate data:
+    #Inputs:
+    #   cellType - return MSN or CRE if both pass ['MNS','CRE']
+    #   mice - (Optional) list of mice from to include. Default: None - will load data for all mice
+    #   period - (Optional) either 'Pre' or 'Post'. difault: None - return full length of data from picked sessions
+    #   day - (Optional) lambda function with logic for picking days. Default: None - ignore day attr when picking data
+    #           NOTE: day will be ignored if period is specified
+    #   cre - (Optional) which cre mouse is it. options:None (default), "PV", "CHI"
+    #                   must have trace included in dataType list to be taken into account
+    #   WinPre - (Optional) length of pre window in secounds (default 2)
+    #   WinPost - (Optional) length of post window in secounds (default 2)
+    #Output:
+    #   data - the requested data. format: {mice_session:{dataType:data}}
+    
+    
+    dFile = 'FinalData_6OHDA_H.h5'
+    # double check parameters inputs are valid:
+
+    df = pd.read_csv(savePath+'sessions')
+    
+    if period == None and day != None and isinstance(day,type(lambda c:None)):
+        df['keep'] = df.apply(lambda row: day(row.day), axis=1)
+        df = df[(df.keep==True)]
+    
+    if period in df.period.unique():
+        df = df[(df.period==period)]
+       
+    if cre in ['PV','CHI','NA']:
+        df = df[(df.cre==cre)]
+    
+    if drug in ['Amph','L-Dopa','Saline','None']:
+        df = df[(df.drug==drug)]
+     
+   
+    # traverse the hdf5 file:
+    if mice == None:
+        mice = getMiceList(dFile) 
+    elif not isinstance(mice,list):
+        mice = [mice]
+    
+    if not isinstance(mice[0],str):
+        for m in range(0,len(mice)):
+            mice[m] = str(mice[m])
+    df = df[(df.mouse.isin(mice))]
+    # start extracting the data:   
+    
+    # alllocate memory:
+   
+    dResult = np.empty([12206,87,len(df)*50],dtype=float)
+    
+    ind = 0
+    for m in df.mouse.unique():
+        dfM = df[df.mouse == m]
+        indM = 0
+        nSessM = len(df.sess.unique())
+        nNeurons = 0
+        MResult = np.empty([12206,87,len(df)*50],dtype=float)
+        for sess in dfM.sess.unique():   
+            tempD = pickle.load(open(savePath+sess,'rb'))
+            tempD[tempD==9999] = np.nan
+            tempD[tempD==-9999] = np.nan
+            mu = np.mean(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+            Std = np.std(tempD[:int(tempD.shape[0]/2),:,:],axis=0)
+            tempD =(tempD-mu)/Std
+#             print(indM,indM+tempD.shape[2],tempD.shape[2],MResult[:,:,indM:(indM+tempD.shape[2])].shape)
+            MResult[:,:,indM:(indM+tempD.shape[2])] = tempD 
+            indM = indM+tempD.shape[2]
+
+        MResult = MResult[:,:,:indM]
+        dResult[:,:,ind] = np.nanmean(MResult,axis=2)  
+        ind = ind+1
+
+        
+    return dResult[:,:,:ind],df
